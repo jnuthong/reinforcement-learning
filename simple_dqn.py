@@ -160,17 +160,10 @@ def deep_q_learning(sess,
 	for i in range(num_episodes):
 
 		state = env.reset()
-	
-		policy = make_epsilon_greedy_policy(q_estimator, len(VALID_ACTIONS))
-		epsilon = epsilons[min(total_t, epsilon_decay_steps-1)]
-		_state = np.array([state_processor.process(sess, state)] * 4)
-		action_probs = policy(sess, [np.stack(_state, axis=2)], epsilon)
-		action = np.random.choice(np.arange(len(action_probs)), p=action_probs)
-	
+		actions = np.random.choice(VALID_ACTIONS, size=_T)
 		done = False
 
 		# each 4 frame as a step
-		_state = [state_processor.process(sess, state)] 
 		_r = 0
 
 		# in origin paper 
@@ -178,14 +171,16 @@ def deep_q_learning(sess,
 		'..., the agent sees and selects action on every kth frame instead of every frame, 
 		and its last action is repeated on skipped frames...'
 		"""
-		for j in range(_T - 1):
-			state, reward, done, _ = env.step(action)
+		_state = []
+		_next_state = []
+		for j in range(_T):
+			next_state, reward, done, _ = env.step(actions[j])
 			_r += reward
 			_state.append(state_processor.process(sess, state))
+			_next_state.append(state_processor.process(sess, next_state))
+			state = next_state
 
-		if len(relay_memory) == replay_memory_size:
-			relay_memory.popleft()
-
+		action = actions[-1]
 		while done is False:
 			# add 4-frame into D 
 			if len(_state) == _T:
@@ -196,7 +191,7 @@ def deep_q_learning(sess,
 				episode_lengths[i] += 1.0 
 				total_t += 1
 
-				relay_memory.append((_state, action, _r, [state_processor.process(sess, state)] * 4))
+				relay_memory.append((_state, action, _r, _next_state))
 
 				# resize input state
 				policy = make_epsilon_greedy_policy(q_estimator, len(VALID_ACTIONS))
@@ -205,6 +200,7 @@ def deep_q_learning(sess,
 				action = np.random.choice(np.arange(len(action_probs)), p=action_probs)
 
 				_state = []
+				_next_state = []
 				_r = 0
 
 				# get enough train sample before learning
@@ -235,23 +231,25 @@ def deep_q_learning(sess,
 					print("Step {} in Episode - {}, with reward {}, total_step {}".format(episode_lengths[i], i, episode_rewards[i], total_t))
 					sys.stdout.flush()
 			
-			state, reward, done, _ = env.step(action)
+			next_state, reward, done, _ = env.step(action)
 			_r += reward
 			_state.append(state_processor.process(sess, state))
+			_next_state.append(state_processor.process(sess, next_state))
+			state = next_state
 
 		# if end before _state have 4 frame, then we fill with last frame
-		if len(_state) < _T:
-			_local = _state[-1]
-			_state += [_local] * (_T - len(_state))
+		# if len(_state) < _T:
+		# 	_local = _state[-1]
+		# 	_state += [_local] * (_T - len(_state))
 		
-			if len(relay_memory) == replay_memory_size:
-				relay_memory.popleft()
+		# 	if len(relay_memory) == replay_memory_size:
+		# 		relay_memory.popleft()
 			
-			relay_memory.append((_state, action, _r, [state_processor.process(sess, state)] * 4))
+		# 	relay_memory.append((_state, action, _r, [state_processor.process(sess, state)] * 4))
 			
-			episode_rewards[i] += _r
-			episode_lengths[i] += 1.0 
-			total_t += 1
+		episode_rewards[i] += _r
+		episode_lengths[i] += 1.0 
+		total_t += 1
 
 		print("Step {} in Episode - {}, with reward {}, total_step {}".format(episode_lengths[i], i, episode_rewards[i], total_t))
 
